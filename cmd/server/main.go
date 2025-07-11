@@ -10,14 +10,12 @@ import (
 	"github.com/akave-ai/go-akavelink/internal/sdk"
 )
 
-// AkaveResponse matches the standard response format
 type AkaveResponse struct {
 	Success bool        `json:"success"`
 	Data    interface{} `json:"data,omitempty"`
 	Error   string      `json:"error,omitempty"`
 }
 
-// server holds the application dependencies
 type server struct {
 	client *sdk.Client
 }
@@ -36,7 +34,6 @@ func (s *server) bucketsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return response in Akave format: { success: true, data: [...] }
 	response := AkaveResponse{
 		Success: true,
 		Data:    buckets,
@@ -135,15 +132,14 @@ func (s *server) writeErrorResponse(w http.ResponseWriter, statusCode int, error
 }
 
 func main() {
-	// Get Akave configuration from environment
 	nodeAddress := os.Getenv("AKAVE_NODE_ADDRESS")
 	if nodeAddress == "" {
-		nodeAddress = os.Getenv("NODE_ADDRESS") // fallback for backward compatibility
+		nodeAddress = os.Getenv("NODE_ADDRESS")
 	}
 
 	privateKey := os.Getenv("AKAVE_PRIVATE_KEY")
 	if privateKey == "" {
-		privateKey = os.Getenv("PRIVATE_KEY") // fallback for backward compatibility
+		privateKey = os.Getenv("PRIVATE_KEY")
 	}
 
 	if privateKey == "" {
@@ -154,11 +150,9 @@ func main() {
 		log.Fatal("AKAVE_NODE_ADDRESS (or NODE_ADDRESS) environment variable is required")
 	}
 
-	// Log initialization info
 	log.Printf("Initializing client with nodeAddress: %s, privateKeyLength: %d",
 		nodeAddress, len(privateKey))
 
-	// Initialize Akave SDK client
 	client, err := sdk.NewClientSimple(nodeAddress, privateKey)
 	if err != nil {
 		log.Fatalf("Failed to initialize Akave client: %v", err)
@@ -172,19 +166,16 @@ func main() {
 		}
 	}()
 
-	// Create server instance
 	srv := &server{
 		client: client,
 	}
 
-	// Set up routes using Go 1.22+ pattern matching
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", srv.healthHandler)
 	mux.HandleFunc("GET /buckets", srv.bucketsHandler)
 	mux.HandleFunc("POST /files/upload/{bucketName}", srv.uploadHandler)
 	mux.HandleFunc("GET /files/download/{bucketName}/{fileName}", srv.downloadHandler)
 
-	// Start server
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
