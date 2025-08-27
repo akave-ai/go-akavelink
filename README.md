@@ -141,10 +141,109 @@ go-akavelink/
 ├── CONTRIBUTING.md     # Guide for contributors
 ```
 
+## REST API
+
+The server in `cmd/server/main.go` listens on `:8080` and exposes:
+
+- **GET `/health`**
+  - Returns plain text `ok`.
+
+- **GET `/buckets/`**
+  - Lists buckets: `{ "success": true, "data": ["bucket1", ...] }`.
+
+- **POST `/buckets/{bucketName}`**
+  - Creates a bucket. Returns 201 on success.
+
+- **DELETE `/buckets/{bucketName}`**
+  - Deletes all files in the bucket, then the bucket.
+
+- **GET `/buckets/{bucketName}/files`**
+  - Lists files in a bucket. Items include `RootCID`, `Name`, `EncodedSize`, `ActualSize`, `CreatedAt`.
+
+- **POST `/buckets/{bucketName}/files`**
+  - Upload a file (multipart/form-data). Form field: `file`.
+  - Response includes `message`, `rootCID`, `bucketName`, `fileName`, `size`, `encodedSize`, `createdAt`, `committedAt`.
+
+- **GET `/buckets/{bucketName}/files/{fileName}`**
+  - Returns file info (`RootCID`, `Name`, `BucketName`, `EncodedSize`, `ActualSize`, `IsPublic`, `CreatedAt`).
+  - Note: a missing file currently returns HTTP 500 with an SDK error message.
+
+- **GET `/buckets/{bucketName}/files/{fileName}/download`**
+  - Streams the file as a download (`Content-Disposition: attachment`).
+
+- **DELETE `/buckets/{bucketName}/files/{fileName}`**
+  - Deletes a single file.
+
+### cURL examples
+
+Assuming the server is running and env vars are set.
+
+- Create a bucket
+  ```bash
+  curl -s -X POST http://localhost:8080/buckets/test_bucket | jq
+  ```
+
+- Upload a file
+  ```bash
+  curl -s -X POST -F "file=@./test.txt" \
+    http://localhost:8080/buckets/test_bucket/files | jq
+  ```
+
+- List files
+  ```bash
+  curl -s http://localhost:8080/buckets/test_bucket/files | jq
+  ```
+
+- File info
+  ```bash
+  curl -s http://localhost:8080/buckets/test_bucket/files/test.txt | jq
+  ```
+
+- Download
+  ```bash
+  # -O saves using remote name; -J respects Content-Disposition
+  curl -OJ http://localhost:8080/buckets/test_bucket/files/test.txt/download
+  ```
+
+- Delete file
+  ```bash
+  curl -s -X DELETE http://localhost:8080/buckets/test_bucket/files/test.txt | jq
+  ```
+
+- Delete bucket
+  ```bash
+  curl -s -X DELETE http://localhost:8080/buckets/test_bucket | jq
+  ```
+
+### Troubleshooting
+
+- **Filename mismatch**: Use the exact `Name` from the list/upload response (e.g., `test.txt` vs `file.txt`). Filenames are case-sensitive.
+- **URL encoding**: Quote or URL-encode filenames with spaces/special chars.
+- **curl: "File exists"** when using `-OJ`: curl won’t overwrite existing local files. Remove/rename the file or use `-o newname`.
+- **"file not exists" from SDK**: Verify `bucketName` and `fileName`. The download route returns 404 when the SDK can’t create a download; the info route currently returns 500.
+
+## Build, Run, Test
+
+- Build
+  ```bash
+  go build -o bin/server ./cmd/server
+  ```
+
+- Run
+  ```bash
+  go run ./cmd/server
+  ```
+
+- Test
+  ```bash
+  go test ./...
+  ```
+  Note: Integration tests may require valid `AKAVE_PRIVATE_KEY` and `AKAVE_NODE_ADDRESS`.
+
 ## Contributing
 
-This repo is open to contributions\! See [`CONTRIBUTING.md`](https://www.google.com/search?q=./CONTRIBUTING.md).
-
+  This repo is open to contributions\! See [`CONTRIBUTING.md`](https://www.google.com/search?q=./CONTRIBUTING.md).
+  
   - Check the [issue tracker](https://github.com/akave-ai/go-akavelink/issues) for `good first issue` and `help wanted` labels.
   - Follow the PR checklist and formatting conventions.
 
