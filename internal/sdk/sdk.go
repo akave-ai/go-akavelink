@@ -87,7 +87,7 @@ func (c *Client) DeleteBucket(ctx context.Context, name string) error {
 
 // ListBuckets returns all bucket names accessible by this client.
 func (c *Client) ListBuckets() ([]string, error) {
-	list, err := c.IPC.ListBuckets(context.Background())
+	list, err := c.IPC.ListBuckets(context.Background(), 0, 1000)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list buckets: %w", err)
 	}
@@ -125,7 +125,7 @@ func (c *Client) FileInfo(ctx context.Context, bucket, fileName string) (sdk.IPC
 
 // ListFiles returns metadata for all files in the specified bucket.
 func (c *Client) ListFiles(ctx context.Context, bucket string) ([]sdk.IPCFileListItem, error) {
-	return c.IPC.ListFiles(ctx, bucket)
+	return c.IPC.ListFiles(ctx, bucket, 0, 1000)
 }
 
 // FileDelete removes a file from a bucket.
