@@ -11,15 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// To avoid circular dependencies and allow `main_test.go` to be in `test/`,
-// we will effectively copy the server setup logic from `main.go` and run it
-// within a test-specific context. This is a common pattern for integration tests.
-
-// Define a placeholder for the server structure from main.go
-// You might need to expose `server` or specific handlers in `main.go`
-// or re-define them here for testing if they are not exported.
-// For simplicity, we'll re-define the necessary parts here.
-
 type testServer struct{}
 
 func (s *testServer) healthHandler(w http.ResponseWriter, r *http.Request) {

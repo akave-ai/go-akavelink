@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"time"
 	"testing"
+	"time"
 
 	akavesdk "github.com/akave-ai/go-akavelink/internal/sdk"
 	"github.com/akave-ai/go-akavelink/internal/utils"
@@ -147,7 +147,7 @@ func TestNewClient_MissingPrivateKey(t *testing.T) {
 // TestNewClient_SDKInitializationFailure tests a scenario where the underlying SDK fails
 func TestNewClient_SDKInitializationFailure(t *testing.T) {
 	originalPrivateKey := os.Getenv("AKAVE_PRIVATE_KEY")
-	os.Setenv("AKAVE_PRIVATE_KEY", "0xinvalidkey") 
+	os.Setenv("AKAVE_PRIVATE_KEY", "0xinvalidkey")
 	defer os.Setenv("AKAVE_PRIVATE_KEY", originalPrivateKey)
 
 	invalidPrivateKey := os.Getenv("AKAVE_PRIVATE_KEY")

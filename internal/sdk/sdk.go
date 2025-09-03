@@ -13,15 +13,15 @@ import (
 // Config defines parameters for initializing the IPC client.
 type Config struct {
 	// NodeAddress is the gRPC endpoint for the AkaveLink node, e.g., "localhost:9090".
-	NodeAddress       string
+	NodeAddress string
 	// MaxConcurrency controls parallelism for upload/download streams.
-	MaxConcurrency    int
+	MaxConcurrency int
 	// BlockPartSize specifies the size of each chunk in bytes.
-	BlockPartSize     int64
+	BlockPartSize int64
 	// UseConnectionPool toggles the SDK's connection pool.
 	UseConnectionPool bool
 	// PrivateKeyHex is the hex-encoded private key used for signing transactions.
-	PrivateKeyHex     string
+	PrivateKeyHex string
 }
 
 // Client wraps the AkaveLink IPC API and manages its SDK lifecycle.
@@ -46,7 +46,7 @@ func NewClient(cfg Config) (*Client, error) {
 		cfg.MaxConcurrency,
 		cfg.BlockPartSize,
 		cfg.UseConnectionPool,
-		opts..., 
+		opts...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("SDK initialization failed: %w", err)
