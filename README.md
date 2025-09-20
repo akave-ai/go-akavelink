@@ -14,50 +14,47 @@
 
 Follow these steps to set up and run `go-akavelink` locally:
 
-1.  **Clone the Repository:**
+1. **Clone the Repository:**
 
-    ```bash
-    git clone [https://github.com/akave-ai/go-akavelink](https://github.com/akave-ai/go-akavelink)
-    cd go-akavelink
-    ```
+   ```bash
+   git clone [https://github.com/akave-ai/go-akavelink](https://github.com/akave-ai/go-akavelink)
+   cd go-akavelink
+   ```
+2. **Obtain Akave Tokens and Private Key:**
 
-2.  **Obtain Akave Tokens and Private Key:**
+   * Access the Akave Faucet: [https://faucet.akave.ai/](https://faucet.akave.ai/)
+   * Add the Akave network to a wallet.
+   * Claim tokens.
+   * Obtain the private key from the wallet.
+3. **Configure Environment Variables:**
+   Create a `.env` file in the root of the `go-akavelink` directory with the following content, replacing `YOUR_PRIVATE_KEY_HERE` with the obtained private key:
 
-    * Access the Akave Faucet: [https://faucet.akave.ai/](https://faucet.akave.ai/)
-    * Add the Akave network to a wallet.
-    * Claim tokens.
-    * Obtain the private key from the wallet.
+   ```
+   AKAVE_PRIVATE_KEY="YOUR_PRIVATE_KEY_HERE"
+   AKAVE_NODE_ADDRESS="connect.akave.ai:5500"
+   AKAVE_ENCRYPTION_KEY="YOUR_AKAVE_ENCRYPTION_KEY"
+   AKAVE_MAX_CONCURRENCY=10
+   AKAVE_BLOCK_PART_SIZE=""1 << 20"
+   ```
+4. **Install Go Modules:**
+   Before running the server, ensure all Go modules are tidy and downloaded:
 
-3.  **Configure Environment Variables:**
-    Create a `.env` file in the root of the `go-akavelink` directory with the following content, replacing `YOUR_PRIVATE_KEY_HERE` with the obtained private key:
+   ```bash
+   go mod tidy
+   ```
+5. **Run the Server:**
 
-    ```
-    AKAVE_PRIVATE_KEY="YOUR_PRIVATE_KEY_HERE"
-    AKAVE_NODE_ADDRESS="connect.akave.ai:5500"
-    AKAVE_ENCRYPTION_KEY="YOUR_AKAVE_ENCRYPTION_KEY"
-    ```
+   ```bash
+   go run ./cmd/server
+   ```
 
-4.  **Install Go Modules:**
-    Before running the server, ensure all Go modules are tidy and downloaded:
+   Output similar to the following should appear:
 
-    ```bash
-    go mod tidy
-    ```
-
-5.  **Run the Server:**
-
-    ```bash
-    go run ./cmd/server
-    ```
-
-    Output similar to the following should appear:
-
-    ```
-    2025/07/07 03:17:14 Starting go-akavelink server on :8080...
-    ```
-
-6.  **Verify Installation:**
-    Visit `http://localhost:8080/health` in a web browser to verify that the server is running correctly.
+   ```
+   2025/07/07 03:17:14 Starting go-akavelink server on :8080...
+   ```
+6. **Verify Installation:**
+   Visit `http://localhost:8080/health` in a web browser to verify that the server is running correctly.
 
 ---
 
