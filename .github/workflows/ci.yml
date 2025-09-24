@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  build-test-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Go version
+        run: go version
+
+      - name: Verify formatting (gofmt)
+        run: |
+          UNFORMATTED=$(gofmt -l .)
+          if [ -n "$UNFORMATTED" ]; then
+            echo "The following files are not gofmt'ed:" >&2
+            echo "$UNFORMATTED" | sed 's/^/  - /' >&2
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.59.1
+          args: --timeout=5m
+
+      - name: Run golangci-lint
+        run: golangci-lint run --out-format=github-actions -v
+
+      - name: Run tests
+        env:
+          AKAVE_PRIVATE_KEY: "" # ensure success-path SDK tests are skipped in CI
+        run: go test ./... -count=1 -race -vet=off

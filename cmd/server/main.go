@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
+	"time"
 
 	"github.com/akave-ai/go-akavelink/internal/handlers"
 	akavesdk "github.com/akave-ai/go-akavelink/internal/sdk"
@@ -53,8 +57,43 @@ func MainFunc() {
 
 	// Set up HTTP server with routes via internal/handlers
 	r := handlers.NewRouter(client)
-	log.Println("Server listening on :8080")
-	log.Fatal(http.ListenAndServe(":8080", r))
+	// Resolve PORT from environment with default
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           r,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	// Listen for shutdown signals
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// Start server
+	go func() {
+		log.Printf("Server listening on :%s", port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("server error: %v", err)
+		}
+	}()
+
+	// Block until a shutdown signal is received
+	<-ctx.Done()
+	log.Println("Shutdown signal received, shutting down gracefully...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Server forced to shutdown: %v", err)
+	}
+	log.Println("Server exited cleanly")
 }
 
 func main() {

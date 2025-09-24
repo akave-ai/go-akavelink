@@ -73,14 +73,24 @@ func TestHTTP_Health(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	r.ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "ok", strings.TrimSpace(rec.Body.String()))
+	var resp struct {
+		Success bool        `json:"success"`
+		Data    interface{} `json:"data"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	assert.True(t, resp.Success)
+	if s, ok := resp.Data.(string); ok {
+		assert.Equal(t, "ok", strings.TrimSpace(s))
+	} else {
+		t.Fatalf("expected data to be string, got %T", resp.Data)
+	}
 }
 
 func TestHTTP_ListBuckets(t *testing.T) {
 	mc := &mockClient{Buckets: []string{"a", "b"}}
 	r := handlers.NewRouter(mc)
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/buckets/", nil))
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/buckets", nil))
 	assert.Equal(t, http.StatusOK, rec.Code)
 	var resp struct {
 		Success bool
