@@ -34,7 +34,7 @@ jobs:
         run: go vet ./...
 
       - name: Install golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v8
         with:
           # Use a v2.x binary so the config (version: 2, run.skip-dirs) validates
           version: v2.5.0
