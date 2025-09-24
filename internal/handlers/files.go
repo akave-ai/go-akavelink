@@ -67,7 +67,11 @@ func (s *Server) uploadHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("form file error: %v", err)
 		return
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("file close error: %v", err)
+		}
+	}()
 
 	ctx := r.Context()
 	upload, err := s.client.CreateFileUpload(ctx, bucketName, handler.Filename)

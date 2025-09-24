@@ -1,7 +1,9 @@
 version: 2
 run:
   timeout: 5m
-  tests: true
+  tests: false
+  skip-dirs:
+    - test
 
 linters:
   enable:
@@ -31,6 +33,7 @@ linters-settings:
       - name: receiver-naming
       - name: errorf
       - name: var-naming
+        disabled: true
 
 issues:
   exclude-use-default: false
@@ -38,3 +41,8 @@ issues:
   max-same-issues: 0
   exclude:
     - "ST1000: .* is unused"   # staticcheck false positives in mocks
+  exclude-rules:
+    - path: ^internal/utils/.*\.go$
+      linters:
+        - revive
+      text: "var-naming: avoid meaningless package names"

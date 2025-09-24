@@ -1,3 +1,4 @@
+// Package main starts the AkaveLink HTTP server exposing the Akave SDK over REST.
 package main
 
 import (
@@ -53,7 +54,11 @@ func MainFunc() {
 	if err != nil {
 		log.Fatalf("client init error: %v", err)
 	}
-	defer client.Close()
+	defer func() {
+		if err := client.Close(); err != nil {
+			log.Printf("client close error: %v", err)
+		}
+	}()
 
 	// Set up HTTP server with routes via internal/handlers
 	r := handlers.NewRouter(client)

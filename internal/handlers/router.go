@@ -1,3 +1,4 @@
+// Package handlers provides HTTP routing and request handlers for the AkaveLink API.
 package handlers
 
 import (

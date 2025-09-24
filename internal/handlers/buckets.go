@@ -1,3 +1,4 @@
+// Package handlers provides HTTP routing and request handlers for the AkaveLink API.
 package handlers
 
 import (
@@ -79,18 +80,18 @@ func (s *Server) deleteBucketHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("Successfully deleted bucket and its contents: %s", bucketName)
-		s.writeSuccessResponse(w, http.StatusOK, map[string]string{
+	s.writeSuccessResponse(w, http.StatusOK, map[string]string{
 		"message": "Bucket and all its contents deleted successfully",
 	})
 }
 
 // viewBucketHandler lists all buckets.
-func (s *Server) viewBucketHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) viewBucketHandler(w http.ResponseWriter, _ *http.Request) {
 	buckets, err := s.client.ListBuckets()
 	if err != nil {
 		s.writeErrorResponse(w, http.StatusInternalServerError, "failed to list buckets")
 		log.Printf("list buckets error: %v", err)
 		return
 	}
-		s.writeSuccessResponse(w, http.StatusOK, buckets)
+	s.writeSuccessResponse(w, http.StatusOK, buckets)
 }

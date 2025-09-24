@@ -54,7 +54,9 @@ func NewClient(cfg Config) (*Client, error) {
 
 	ipcClient, err := core.IPC()
 	if err != nil {
-		core.Close()
+		if cerr := core.Close(); cerr != nil {
+			return nil, fmt.Errorf("failed to obtain IPC interface: %v; additionally failed to close SDK core: %w", err, cerr)
+		}
 		return nil, fmt.Errorf("failed to obtain IPC interface: %w", err)
 	}
 
