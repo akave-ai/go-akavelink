@@ -24,8 +24,13 @@ help:
 fmt:
 	@echo "Formatting with gofmt..."
 	gofmt -s -w .
-	@echo "Fixing imports with goimports... (install with 'go install golang.org/x/tools/cmd/goimports@latest' if missing)"
-	goimports -w .
+	@echo "Fixing imports with goimports..."
+	@if command -v goimports >/dev/null 2>&1; then \
+		goimports -w .; \
+	else \
+		echo "goimports not found on PATH; running via 'go run' (one-off)"; \
+		go run golang.org/x/tools/cmd/goimports@latest -w .; \
+	fi
 
 fmt-check:
 	@echo "Checking formatting..."

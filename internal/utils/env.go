@@ -1,4 +1,5 @@
 // Package utils provides helpers for loading environment configuration and locating the module root.
+//
 //revive:disable:var-naming // allow package name 'utils' for historical compatibility
 package utils
 
