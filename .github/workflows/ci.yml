@@ -36,11 +36,9 @@ jobs:
       - name: Install golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.59.1
-          args: --timeout=5m
-
-      - name: Run golangci-lint
-        run: golangci-lint run --out-format=github-actions -v
+          # Use a v2.x binary so the config (version: 2, run.skip-dirs) validates
+          version: v2.5.0
+          args: --timeout=5m --out-format=github-actions -v
 
       - name: Run tests
         env:
