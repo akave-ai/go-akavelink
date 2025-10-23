@@ -1,13 +1,13 @@
 
 # go-akavelink
 
-🚀 A Go-based HTTP server that wraps the Akave SDK, exposing Akave APIs over REST. The previous version of this repository was a CLI wrapper around the Akave SDK; refer to [akavelink](https://github.com/akave-ai/akavelink).
+A Go-based HTTP server that wraps the Akave SDK, exposing Akave APIs over REST. The previous version of this repository was a CLI wrapper around the Akave SDK; refer to [akavelink](https://github.com/akave-ai/akavelink).
 
 ## Project Goals
 
-* Provide a production-ready HTTP layer around the Akave SDK.
-* Replace dependency on CLI-based wrappers.
-* Facilitate integration of Akave storage into other systems via simple REST APIs.
+- Provide a production-ready HTTP layer around the Akave SDK.
+- Replace dependency on CLI-based wrappers.
+- Facilitate integration of Akave storage into other systems via simple REST APIs.
 
 ---
 
@@ -15,104 +15,91 @@
 
 Follow these steps to set up and run `go-akavelink` locally:
 
-1.  **Clone the Repository:**
+1. Clone the repository
 
-    ```bash
-    git clone [https://github.com/akave-ai/go-akavelink](https://github.com/akave-ai/go-akavelink)
-    cd go-akavelink
-    ```
+   ```bash
+   git clone https://github.com/akave-ai/go-akavelink
+   cd go-akavelink
+   ```
 
-2.  **Obtain Akave Tokens and Private Key:**
+2. Obtain Akave tokens and a private key
 
-    * Access the Akave Faucet: [https://faucet.akave.ai/](https://faucet.akave.ai/)
-    * Add the Akave network to a wallet.
-    * Claim tokens.
-    * Obtain the private key from the wallet.
+   - Visit the Akave Faucet: https://faucet.akave.ai/
+   - Add the Akave network to a wallet
+   - Claim test tokens
+   - Export the account's private key
 
-3.  **Configure Environment Variables:**
-    Create a `.env` file in the root of the `go-akavelink` directory with the following content, replacing `YOUR_PRIVATE_KEY_HERE` with the obtained private key:
+3. Configure environment variables
 
-    ```
-    AKAVE_PRIVATE_KEY="YOUR_PRIVATE_KEY_HERE"
-    AKAVE_NODE_ADDRESS="connect.akave.ai:5500"
-    ```
+   You can place them in a `.env` at the repo root (auto-loaded by the server) or export them in your shell.
 
-4.  **Run Setup Script (Recommended):**
+   Required
+   - `AKAVE_PRIVATE_KEY` (hex string) — used to sign transactions
+   - `AKAVE_NODE_ADDRESS` (host:port) — Akave node gRPC endpoint (e.g., `connect.akave.ai:5500`)
 
-    The `scripts/` directory contains helper scripts (`setup.sh` and `setup.bat`) to automate the environment variable export process.
+   Optional (with defaults)
+   - `AKAVE_MAX_CONCURRENCY` (int, default: 10)
+   - `AKAVE_BLOCK_PART_SIZE` (bytes, int64, default: 1048576)
 
-    **For macOS/Linux:**
-    Navigate to the `scripts` directory and grant execute permissions, then run the script:
+   Example `.env`:
 
-    ```bash
-    chmod +x scripts/setup.sh
-    ./scripts/setup.sh
-    ```
+   ```
+   AKAVE_PRIVATE_KEY=YOUR_PRIVATE_KEY_HERE
+   AKAVE_NODE_ADDRESS=connect.akave.ai:5500
+   AKAVE_MAX_CONCURRENCY=10
+   AKAVE_BLOCK_PART_SIZE=1048576
+   ```
 
-    This script exports the variables from the `.env` file into the current terminal session. To verify, run:
+   Tip: You can override the `.env` path by setting `DOTENV_PATH=/absolute/path/to/.env`.
 
-    ```bash
-    echo $AKAVE_PRIVATE_KEY
-    echo $AKAVE_NODE_ADDRESS
-    ```
+4. Install Go modules
 
-    These variables will persist for the current terminal session. For permanent environment variables, consider adding them to a shell's configuration file (e.g., `~/.bashrc`, `~/.zshrc`, or `~/.profile`).
+   ```bash
+   go mod tidy
+   ```
 
-    **For Windows PowerShell:**
-    PowerShell execution policy might need adjustment to run scripts. Open PowerShell as an administrator and run:
+5. Run the server
 
-    ```powershell
-    Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
-    ```
+   ```bash
+   # Optionally set PORT (default: 8080)
+   PORT=8080 go run ./cmd/server
+   ```
 
-    Then, it is recommended to use Windows Subsystem for Linux (WSL) or Git Bash to run the `.sh` script for a more native experience.
+   You should see a startup message similar to:
 
-    Alternatively, to manually export variables in PowerShell:
-    ```powershell
-    Get-Content .env | ForEach-Object {
-        $line = $_.Trim()
-        if (-not ([string]::IsNullOrEmpty($line)) -and -not $line.StartsWith("#")) {
-            $parts = $line.Split('=', 2)
-            if ($parts.Length -eq 2) {
-                $varName = $parts[0]
-                $varValue = $parts[1].Trim('"')
-                [System.Environment]::SetEnvironmentVariable($varName, $varValue, "Process")
-                Write-Host "Exported variable: $varName"
-            }
-        }
-    }
-    ```
+   ```
+   20xx/xx/xx Server listening on :8080
+   ```
 
-    To verify variables are loaded in the current PowerShell session, run:
+6. Verify
 
-    ```powershell
-    Get-Item Env:AKAVE_PRIVATE_KEY
-    Get-Item Env:AKAVE_NODE_ADDRESS
-    ```
+   Visit http://localhost:8080/health or use curl:
 
-    These variables will persist for the current PowerShell session. For permanent environment variables, refer to Windows documentation on setting system or user-specific environment variables.
+   ```bash
+   curl -sS http://localhost:8080/health | jq
+   # => {"success": true, "data": "ok"}
+   ```
 
-5.  **Install Go Modules:**
-    Before running the server, ensure all Go modules are tidy and downloaded:
+---
 
-    ```bash
-    go mod tidy
-    ```
+## API Endpoints
 
-6.  **Run the Server:**
+Implemented routes (see `internal/handlers/`):
 
-    ```bash
-    go run ./cmd/server
-    ```
+- Health
+  - GET `/health` → 200 with JSON `{ "success": true, "data": "ok" }`
 
-    Output similar to the following should appear:
+- Buckets
+  - GET `/buckets` → list all buckets
+  - POST `/buckets/{bucketName}` → create bucket
+  - DELETE `/buckets/{bucketName}` → delete bucket and all files within
 
-    ```
-    2025/07/07 03:17:14 Starting go-akavelink server on :8080...
-    ```
-
-7.  **Verify Installation:**
-    Visit `http://localhost:8080/health` in a web browser to verify that the server is running correctly.
+- Files
+  - GET `/buckets/{bucketName}/files` → list files in a bucket
+  - POST `/buckets/{bucketName}/files` → upload file (multipart/form-data, field name: `file`)
+  - GET `/buckets/{bucketName}/files/{fileName}` → file metadata
+  - GET `/buckets/{bucketName}/files/{fileName}/download` → download file content
+  - DELETE `/buckets/{bucketName}/files/{fileName}` → delete file
 
 ---
 
@@ -121,20 +108,32 @@ Follow these steps to set up and run `go-akavelink` locally:
 ```markdown
 
 go-akavelink/
-├── cmd/                \# Main entrypoint for executables
+├── CONTRIBUTING.md
+├── LICENSE
+├── README.md
+├── go.mod
+├── go.sum
+├── cmd/
 │   └── server/
-│       └── main.go     \# Starts the HTTP server
-├── internal/           \# Internal logic, not intended for external consumption
-│   └── sdk/            \# Wrapper around the Akave SDK
-├── pkg/                \# Public packages (if needed)
-├── docs/               \# Architecture, design, and other documentation
-├── scripts/            \# Helper scripts (e.g., setup.sh for environment variables)
-│   ├── setup.sh
-│   └── setup.bat
-├── go.mod              \# Go module definition file
-├── README.md           \# Project overview and setup instructions
-└── CONTRIBUTING.md     \# Guide for project contributors
-
+│       └── main.go
+├── docs/
+│   └── architecture.md
+├── internal/
+│   ├── handlers/
+│   │   ├── router.go       # Wires routes only
+│   │   ├── response.go     # JSON envelope + helpers
+│   │   ├── health.go       # /health
+│   │   ├── buckets.go      # bucket endpoints
+│   │   └── files.go        # file endpoints
+│   ├── sdk/
+│   │   └── sdk.go
+│   └── utils/
+│       └── env.go
+└── test/
+    ├── http_endpoints_test.go
+    ├── integration_sdk_test.go
+    ├── main_test.go
+    └── sdk_test.go
 ```
 
 ---
@@ -143,5 +142,5 @@ go-akavelink/
 
 This repository is open to contributions! See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
-* Check the [issue tracker](https://github.com/akave-ai/go-akavelink/issues) for `good first issue` and `help wanted` labels.
-* Follow the pull request checklist and formatting conventions.
+- Check the [issue tracker](https://github.com/akave-ai/go-akavelink/issues) for `good first issue` and `help wanted` labels.
+- Follow the pull request checklist and formatting conventions.

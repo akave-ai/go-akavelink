@@ -9,4 +9,9 @@
 NOTES
 .env
 .env
+test.txt
+.vscode/
 *.txt
+replica/
+.akave_wallets
+pr.md

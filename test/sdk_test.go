@@ -1,13 +1,15 @@
 package test
 
 import (
+	"context"
+	"fmt"
 	"log"
-	"os" // Keep this import if you still use it for anything else, though not strictly needed now for .env loading
-	// Keep this import if you still use it for anything else, though not strictly needed now for .env loading
+	"os"
 	"testing"
+	"time"
 
 	akavesdk "github.com/akave-ai/go-akavelink/internal/sdk"
-	"github.com/akave-ai/go-akavelink/internal/utils" // Import your new utils package
+	"github.com/akave-ai/go-akavelink/internal/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -18,25 +20,17 @@ var (
 	testNodeAddress string
 )
 
-// init function runs before any tests in the package
 func init() {
-	// Load environment variables using the reusable function
-	// This will try DOTENV_PATH first, then fallback to module root .env
 	utils.LoadEnvConfig()
 
-	// Retrieve private key from environment variable (will now include values from .env if loaded)
 	testPrivateKey = os.Getenv("AKAVE_PRIVATE_KEY")
 	if testPrivateKey == "" {
-		// Provide a fallback mock key for tests if no real key is set.
-		// For TestNewClient_Success, this will cause it to skip unless a real key is provided.
 		testPrivateKey = "e11da8d70c0ef001264b59dc2f"
 		log.Println("AKAVE_PRIVATE_KEY not set in environment or .env, using mock private key for tests.")
 	}
 
-	// Retrieve node address from environment variable
 	testNodeAddress = os.Getenv("AKAVE_NODE_ADDRESS")
 	if testNodeAddress == "" {
-		// Provide a fallback for tests.
 		testNodeAddress = "connect.akave.ai:5500" // Fallback to a common remote test address
 		log.Println("AKAVE_NODE_ADDRESS not set in environment or .env, using fallback node address for tests.")
 	}
@@ -44,8 +38,6 @@ func init() {
 
 // TestNewClient_Success tests successful client initialization
 func TestNewClient_Success(t *testing.T) {
-	// Ensure that if AKAVE_PRIVATE_KEY is not set (e.g., in a CI environment
-	// where real connectivity isn't expected or configured), we skip this test.
 	if os.Getenv("AKAVE_PRIVATE_KEY") == "" {
 		t.Skip("AKAVE_PRIVATE_KEY environment variable not set, skipping TestNewClient_Success as it requires a real key.")
 	}
@@ -62,21 +54,81 @@ func TestNewClient_Success(t *testing.T) {
 	require.NoError(t, err, "NewClient should not return an error with valid config")
 	require.NotNil(t, client, "NewClient should return a non-nil client")
 
-	// Ensure Close is called to release resources
 	defer func() {
 		err := client.Close()
 		assert.NoError(t, err, "client.Close() should not return an error")
 	}()
+}
 
-	// Add more specific assertions here if there were client internal states to check.
+// TestNewIPC_Success verifies we can obtain a fresh IPC instance from the SDK core.
+func TestNewIPC_Success(t *testing.T) {
+	if os.Getenv("AKAVE_PRIVATE_KEY") == "" {
+		t.Skip("AKAVE_PRIVATE_KEY environment variable not set; skipping NewIPC test")
+	}
+
+	cfg := akavesdk.Config{
+		NodeAddress:       testNodeAddress,
+		MaxConcurrency:    1,
+		BlockPartSize:     1024,
+		UseConnectionPool: false,
+		PrivateKeyHex:     testPrivateKey,
+	}
+
+	client, err := akavesdk.NewClient(cfg)
+	require.NoError(t, err)
+	defer func() { _ = client.Close() }()
+
+	ipc, err := client.NewIPC()
+	require.NoError(t, err)
+	require.NotNil(t, ipc)
+}
+
+// TestBucketLifecycle_Minimal covers create bucket, list buckets, list files (empty), and cleanup.
+func TestBucketLifecycle_Minimal(t *testing.T) {
+	if os.Getenv("AKAVE_PRIVATE_KEY") == "" {
+		t.Skip("AKAVE_PRIVATE_KEY environment variable not set; skipping bucket lifecycle test")
+	}
+
+	cfg := akavesdk.Config{
+		NodeAddress:       testNodeAddress,
+		MaxConcurrency:    1,
+		BlockPartSize:     1024,
+		UseConnectionPool: false,
+		PrivateKeyHex:     testPrivateKey,
+	}
+
+	client, err := akavesdk.NewClient(cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = client.Close() })
+
+	ctx := context.Background()
+	bucket := fmt.Sprintf("sdk-min-%d", time.Now().UnixNano())
+
+	// Ensure cleanup
+	t.Cleanup(func() { _ = client.DeleteBucket(ctx, bucket) })
+
+	// Create bucket
+	require.NoError(t, client.CreateBucket(ctx, bucket))
+
+	// ListBuckets should include the new bucket (eventual consistency may require a short wait)
+	buckets, err := client.ListBuckets()
+	require.NoError(t, err)
+	assert.Contains(t, buckets, bucket)
+
+	// ListFiles should be empty initially
+	files, err := client.ListFiles(ctx, bucket)
+	require.NoError(t, err)
+	assert.Equal(t, 0, len(files))
+
+	// Delete bucket
+	require.NoError(t, client.DeleteBucket(ctx, bucket))
 }
 
 // TestNewClient_MissingPrivateKey tests client initialization without a private key
 func TestNewClient_MissingPrivateKey(t *testing.T) {
-	// Temporarily unset the private key for this test to ensure it fails as expected
 	originalPrivateKey := os.Getenv("AKAVE_PRIVATE_KEY")
 	os.Setenv("AKAVE_PRIVATE_KEY", "")
-	defer os.Setenv("AKAVE_PRIVATE_KEY", originalPrivateKey) // Restore after test
+	defer os.Setenv("AKAVE_PRIVATE_KEY", originalPrivateKey)
 
 	cfg := akavesdk.Config{
 		NodeAddress:       testNodeAddress,
@@ -88,18 +140,17 @@ func TestNewClient_MissingPrivateKey(t *testing.T) {
 
 	client, err := akavesdk.NewClient(cfg)
 	require.Error(t, err, "NewClient should return an error if private key is missing")
-	assert.Contains(t, err.Error(), "private key is required", "Error message should indicate missing private key")
+	assert.Contains(t, err.Error(), "missing PrivateKeyHex", "Error message should indicate missing PrivateKeyHex")
 	assert.Nil(t, client, "NewClient should return a nil client on error")
 }
 
 // TestNewClient_SDKInitializationFailure tests a scenario where the underlying SDK fails
 func TestNewClient_SDKInitializationFailure(t *testing.T) {
-	// Temporarily set an invalid private key for this test
 	originalPrivateKey := os.Getenv("AKAVE_PRIVATE_KEY")
-	os.Setenv("AKAVE_PRIVATE_KEY", "0xinvalidkey")           // This specifically triggers the "invalid hex character" error
-	defer os.Setenv("AKAVE_PRIVATE_KEY", originalPrivateKey) // Restore after test
+	os.Setenv("AKAVE_PRIVATE_KEY", "0xinvalidkey")
+	defer os.Setenv("AKAVE_PRIVATE_KEY", originalPrivateKey)
 
-	invalidPrivateKey := os.Getenv("AKAVE_PRIVATE_KEY") // Will now be "0xinvalidkey"
+	invalidPrivateKey := os.Getenv("AKAVE_PRIVATE_KEY")
 
 	cfg := akavesdk.Config{
 		NodeAddress:       testNodeAddress,
@@ -111,7 +162,6 @@ func TestNewClient_SDKInitializationFailure(t *testing.T) {
 
 	client, err := akavesdk.NewClient(cfg)
 	require.Error(t, err, "NewClient should return an error with an invalid private key (simulating SDK init failure)")
-	// Updated assertion to match the actual error message from the SDK
 	assert.Contains(t, err.Error(), "invalid hex character", "Error message should indicate an invalid private key")
 	assert.Nil(t, client, "NewClient should return a nil client on SDK init error")
 }

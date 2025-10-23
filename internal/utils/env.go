@@ -1,4 +1,6 @@
-// internal/utils/env.go
+// Package utils provides helpers for loading environment configuration and locating the module root.
+//
+//revive:disable:var-naming // allow package name 'utils' for historical compatibility
 package utils
 
 import (
@@ -8,7 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/joho/godotenv" // Still need godotenv here for the loading function
+	"github.com/joho/godotenv"
 )
 
 // FindModuleRoot finds the root directory of the current Go module by
@@ -18,10 +20,6 @@ func FindModuleRoot() (string, error) {
 	if !ok {
 		return "", fmt.Errorf("could not get caller info to find module root")
 	}
-	// Start searching from the directory of the file that *called* FindModuleRoot
-	// (or the directory of this file if used directly).
-	// A common pattern is to make this function robust to being called from anywhere.
-	// We'll start from the current file's directory.
 	currentDir := filepath.Dir(filename)
 
 	for {
