@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/akave-ai/go-akavelink/internal/validation"
 	"github.com/gorilla/mux"
 )
 
@@ -17,10 +18,15 @@ func (s *Server) createBucketHandler(w http.ResponseWriter, r *http.Request) {
 
 	vars := mux.Vars(r)
 	bucketName := vars["bucketName"]
-	if bucketName == "" {
-		s.writeErrorResponse(w, http.StatusBadRequest, "bucketName is required")
+
+	// Validate bucket name
+	if err := validation.ValidateBucketName(bucketName); err != nil {
+		s.writeErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	// Sanitize bucket name for extra safety
+	bucketName = validation.SanitizeBucketName(bucketName)
 
 	if err := s.client.CreateBucket(r.Context(), bucketName); err != nil {
 		s.writeErrorResponse(w, http.StatusInternalServerError, "Failed to create bucket")
@@ -42,10 +48,15 @@ func (s *Server) deleteBucketHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	vars := mux.Vars(r)
 	bucketName := vars["bucketName"]
-	if bucketName == "" {
-		s.writeErrorResponse(w, http.StatusBadRequest, "bucketName is required")
+
+	// Validate bucket name
+	if err := validation.ValidateBucketName(bucketName); err != nil {
+		s.writeErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	// Sanitize bucket name for extra safety
+	bucketName = validation.SanitizeBucketName(bucketName)
 
 	ctx := r.Context()
 	files, err := s.client.ListFiles(ctx, bucketName)

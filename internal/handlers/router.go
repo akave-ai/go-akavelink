@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/akave-ai/go-akavelink/internal/middleware"
 	"github.com/gorilla/mux"
 
 	sdksym "github.com/akave-ai/akavesdk/sdk"
@@ -41,16 +42,23 @@ func NewRouter(client ClientAPI) http.Handler {
 	r := mux.NewRouter().StrictSlash(true)
 	s := &Server{client: client}
 
+	// Apply global middleware
+	r.Use(middleware.SecurityHeaders)
+	r.Use(middleware.LogRequest)
+
+	// Health check (no validation needed)
 	r.HandleFunc("/health", s.healthHandler).Methods("GET")
+
 	// Buckets
 	r.HandleFunc("/buckets/{bucketName}", s.createBucketHandler).Methods("POST")
 	r.HandleFunc("/buckets/{bucketName}", s.deleteBucketHandler).Methods("DELETE")
-	// Normalized route without trailing slash; keep both for compatibility
 	r.HandleFunc("/buckets", s.viewBucketHandler).Methods("GET")
-	// r.HandleFunc("/buckets/", viewBucketHandler).Methods("GET")
-	// Files
+
+	// Files - List and Upload (bucket name only)
 	r.HandleFunc("/buckets/{bucketName}/files", s.listFilesHandler).Methods("GET")
 	r.HandleFunc("/buckets/{bucketName}/files", s.uploadHandler).Methods("POST")
+
+	// Files - Operations requiring both bucket and file name
 	r.HandleFunc("/buckets/{bucketName}/files/{fileName}", s.fileInfoHandler).Methods("GET")
 	r.HandleFunc("/buckets/{bucketName}/files/{fileName}/download", s.downloadHandler).Methods("GET")
 	r.HandleFunc("/buckets/{bucketName}/files/{fileName}", s.fileDeleteHandler).Methods("DELETE")

@@ -103,6 +103,72 @@ Implemented routes (see `internal/handlers/`):
 
 ---
 
+## Input Validation & Security
+
+The API implements comprehensive input validation and sanitization to protect against common attacks:
+
+### Bucket Name Validation
+
+- **Length**: 1-63 characters
+- **Allowed characters**: Alphanumeric (a-z, A-Z, 0-9), hyphens (-), underscores (_)
+- **Format**: Must start and end with an alphanumeric character
+- **Security**: Prevents path traversal attacks, special characters, and malicious patterns
+
+**Examples:**
+- ✅ Valid: `my-bucket`, `data_store_123`, `bucket1`
+- ❌ Invalid: `../etc`, `my bucket`, `bucket!@#`, `-bucket`, `bucket-`
+
+### File Name Validation
+
+- **Length**: Maximum 255 characters
+- **Allowed characters**: Alphanumeric (a-z, A-Z, 0-9), dots (.), hyphens (-), underscores (_)
+- **Format**: Must start and end with an alphanumeric character
+- **Security**: Prevents path traversal, null bytes, and invalid filename characters
+
+**Examples:**
+- ✅ Valid: `document.pdf`, `my-file_v2.txt`, `data.backup.tar.gz`
+- ❌ Invalid: `../../../etc/passwd`, `file<>name.txt`, `.hidden`, `file.`
+
+### File Upload Validation
+
+- **Maximum file size**: 100 MB (104,857,600 bytes)
+- **Minimum file size**: Must not be empty (> 0 bytes)
+- **Allowed MIME types**:
+  - `application/octet-stream` (binary/default)
+  - `text/plain`, `text/csv`
+  - `application/json`, `application/pdf`
+  - `image/jpeg`, `image/png`, `image/gif`, `image/webp`
+  - `video/mp4`
+  - `audio/mpeg`
+
+**Security features:**
+- Content-Length validation before parsing
+- MIME type verification
+- File name sanitization
+- Protection against malicious file uploads
+
+### Error Responses
+
+Validation errors return HTTP 400 (Bad Request) with a JSON response:
+
+```json
+{
+  "error": "Validation Error",
+  "field": "bucketName",
+  "message": "bucket name must contain only alphanumeric characters, hyphens, and underscores"
+}
+```
+
+### Security Headers
+
+All responses include security headers:
+- `X-Content-Type-Options: nosniff` - Prevents MIME type sniffing
+- `X-Frame-Options: DENY` - Prevents clickjacking
+- `X-XSS-Protection: 1; mode=block` - Enables XSS protection
+- `Content-Security-Policy: default-src 'self'` - Restricts resource loading
+
+---
+
 ## Project Structure
 
 ```markdown
@@ -120,11 +186,15 @@ go-akavelink/
 │   └── architecture.md
 ├── internal/
 │   ├── handlers/
-│   │   ├── router.go       # Wires routes only
+│   │   ├── router.go       # Wires routes and middleware
 │   │   ├── response.go     # JSON envelope + helpers
 │   │   ├── health.go       # /health
 │   │   ├── buckets.go      # bucket endpoints
 │   │   └── files.go        # file endpoints
+│   ├── middleware/
+│   │   └── validation.go   # Validation middleware
+│   ├── validation/
+│   │   └── validator.go    # Input validation & sanitization
 │   ├── sdk/
 │   │   └── sdk.go
 │   └── utils/
@@ -133,7 +203,10 @@ go-akavelink/
     ├── http_endpoints_test.go
     ├── integration_sdk_test.go
     ├── main_test.go
-    └── sdk_test.go
+    ├── sdk_test.go
+    ├── validation_test.go
+    ├── middleware_test.go
+    └── validation_integration_test.go
 ```
 
 ---
