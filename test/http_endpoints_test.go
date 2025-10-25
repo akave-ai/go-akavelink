@@ -79,10 +79,14 @@ func TestHTTP_Health(t *testing.T) {
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
 	assert.True(t, resp.Success)
-	if s, ok := resp.Data.(string); ok {
-		assert.Equal(t, "ok", strings.TrimSpace(s))
+	// The health endpoint now returns a structured response with additional fields
+	if dataMap, ok := resp.Data.(map[string]interface{}); ok {
+		assert.Equal(t, "ok", dataMap["status"])
+		assert.Contains(t, dataMap, "timestamp")
+		assert.Contains(t, dataMap, "service")
+		assert.Contains(t, dataMap, "version")
 	} else {
-		t.Fatalf("expected data to be string, got %T", resp.Data)
+		t.Fatalf("expected data to be map, got %T", resp.Data)
 	}
 }
 
