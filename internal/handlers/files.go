@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/akave-ai/go-akavelink/internal/validation"
 	"github.com/gorilla/mux"
 )
 
@@ -12,10 +13,22 @@ func (s *Server) fileInfoHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	bucketName := vars["bucketName"]
 	fileName := vars["fileName"]
-	if bucketName == "" || fileName == "" {
-		s.writeErrorResponse(w, http.StatusBadRequest, "bucketName and fileName are required")
+
+	// Validate bucket name
+	if err := validation.ValidateBucketName(bucketName); err != nil {
+		s.writeErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	// Validate file name
+	if err := validation.ValidateFileName(fileName); err != nil {
+		s.writeErrorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Sanitize inputs
+	bucketName = validation.SanitizeBucketName(bucketName)
+	fileName = validation.SanitizeFileName(fileName)
 
 	info, err := s.client.FileInfo(r.Context(), bucketName, fileName)
 	if err != nil {
@@ -31,10 +44,15 @@ func (s *Server) fileInfoHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) listFilesHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	bucketName := vars["bucketName"]
-	if bucketName == "" {
-		s.writeErrorResponse(w, http.StatusBadRequest, "bucketName is required")
+
+	// Validate bucket name
+	if err := validation.ValidateBucketName(bucketName); err != nil {
+		s.writeErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	// Sanitize bucket name
+	bucketName = validation.SanitizeBucketName(bucketName)
 
 	files, err := s.client.ListFiles(r.Context(), bucketName)
 	if err != nil {
@@ -50,8 +68,19 @@ func (s *Server) listFilesHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	bucketName := vars["bucketName"]
-	if bucketName == "" {
-		s.writeErrorResponse(w, http.StatusBadRequest, "bucketName is required")
+
+	// Validate bucket name
+	if err := validation.ValidateBucketName(bucketName); err != nil {
+		s.writeErrorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Sanitize bucket name
+	bucketName = validation.SanitizeBucketName(bucketName)
+
+	// Validate content length before parsing
+	if err := validation.ValidateContentLength(r.ContentLength); err != nil {
+		s.writeErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -73,8 +102,17 @@ func (s *Server) uploadHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	// Validate file upload (size, MIME type, filename)
+	if err := validation.ValidateFileUpload(handler); err != nil {
+		s.writeErrorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Sanitize filename
+	fileName := validation.SanitizeFileName(handler.Filename)
+
 	ctx := r.Context()
-	upload, err := s.client.CreateFileUpload(ctx, bucketName, handler.Filename)
+	upload, err := s.client.CreateFileUpload(ctx, bucketName, fileName)
 	if err != nil {
 		s.writeErrorResponse(w, http.StatusInternalServerError, "Failed to create file upload stream")
 		log.Printf("create upload error: %v", err)
@@ -89,14 +127,16 @@ func (s *Server) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := map[string]interface{}{
-		"message":     "File uploaded successfully",
-		"rootCID":     meta.RootCID,
-		"bucketName":  meta.BucketName,
-		"fileName":    meta.Name,
-		"size":        meta.Size,
-		"encodedSize": meta.EncodedSize,
-		"createdAt":   meta.CreatedAt,
-		"committedAt": meta.CommittedAt,
+		"message":       "File uploaded successfully",
+		"rootCID":       meta.RootCID,
+		"bucketName":    meta.BucketName,
+		"fileName":      meta.Name,
+		"originalName":  handler.Filename,
+		"sanitizedName": fileName,
+		"size":          meta.Size,
+		"encodedSize":   meta.EncodedSize,
+		"createdAt":     meta.CreatedAt,
+		"committedAt":   meta.CommittedAt,
 	}
 	s.writeSuccessResponse(w, http.StatusCreated, resp)
 }
@@ -106,10 +146,22 @@ func (s *Server) downloadHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	bucketName := vars["bucketName"]
 	fileName := vars["fileName"]
-	if bucketName == "" || fileName == "" {
-		s.writeErrorResponse(w, http.StatusBadRequest, "bucketName and fileName are required")
+
+	// Validate bucket name
+	if err := validation.ValidateBucketName(bucketName); err != nil {
+		s.writeErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	// Validate file name
+	if err := validation.ValidateFileName(fileName); err != nil {
+		s.writeErrorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Sanitize inputs
+	bucketName = validation.SanitizeBucketName(bucketName)
+	fileName = validation.SanitizeFileName(fileName)
 
 	dl, err := s.client.CreateFileDownload(r.Context(), bucketName, fileName)
 	if err != nil {
@@ -131,10 +183,22 @@ func (s *Server) fileDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	bucketName := vars["bucketName"]
 	fileName := vars["fileName"]
-	if bucketName == "" || fileName == "" {
-		s.writeErrorResponse(w, http.StatusBadRequest, "bucketName and fileName are required")
+
+	// Validate bucket name
+	if err := validation.ValidateBucketName(bucketName); err != nil {
+		s.writeErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	// Validate file name
+	if err := validation.ValidateFileName(fileName); err != nil {
+		s.writeErrorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Sanitize inputs
+	bucketName = validation.SanitizeBucketName(bucketName)
+	fileName = validation.SanitizeFileName(fileName)
 
 	if err := s.client.FileDelete(r.Context(), bucketName, fileName); err != nil {
 		s.writeErrorResponse(w, http.StatusInternalServerError, "Failed to delete file")
