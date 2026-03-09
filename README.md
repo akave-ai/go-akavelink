@@ -14,7 +14,7 @@ A Go-based HTTP server that wraps the Akave SDK, exposing Akave storage over RES
 - **Structured logging** — JSON or text logs with configurable level; request logging (method, path, status, duration).
 - **CORS** — Configurable allowed origins (default: allow all).
 - **Byte-range downloads** — `Range` header support (RFC 7233) for partial file download.
-- **Docker** — Multi-stage Dockerfile; build and push to Docker Hub.
+- **Docker** — Published image `akave/go-akavelink` on Docker Hub; multi-stage Dockerfile for building from source.
 
 ---
 
@@ -53,6 +53,57 @@ LOG_LEVEL=info
 LOG_FORMAT=json
 CORS_ORIGINS=*
 ```
+
+---
+
+## Production setup
+
+Run the published image **detached** (no need to clone the repo). Requires Docker and your Akave credentials.
+
+**Pull and run (detached):**
+
+```bash
+docker run -d \
+  --name akavelink \
+  -p 8080:8080 \
+  -e AKAVE_PRIVATE_KEY=your_hex_private_key \
+  -e AKAVE_NODE_ADDRESS=connect.akave.ai:5500 \
+  --restart unless-stopped \
+  akave/go-akavelink:v1.0.0
+```
+
+- **`-d`** — Run in background (detached).
+- **`--name akavelink`** — Container name for `docker logs akavelink`, `docker stop akavelink`, etc.
+- **`-p 8080:8080`** — Host port 8080 → container port 8080 (override host with e.g. `-p 3000:8080`).
+- **`--restart unless-stopped`** — Restart the container on failure or after reboot (optional).
+
+**Using an env file (recommended for production):**
+
+```bash
+# .env.prod (do not commit; include AKAVE_PRIVATE_KEY, AKAVE_NODE_ADDRESS, etc.)
+docker run -d \
+  --name akavelink \
+  -p 8080:8080 \
+  --env-file .env.prod \
+  --restart unless-stopped \
+  akave/go-akavelink:v1.0.0
+```
+
+**Check logs and health:**
+
+```bash
+docker logs -f akavelink
+curl -sS http://localhost:8080/health | jq
+```
+
+**Stop and remove:**
+
+```bash
+docker stop akavelink
+docker rm akavelink
+```
+
+All [environment variables](#environment-configuration) (e.g. `PORT`, `LOG_LEVEL`, `CORS_ORIGINS`) can be passed with `-e` or via `--env-file`. The image includes a **HEALTHCHECK** on `GET /health`.
 
 ---
 
@@ -123,11 +174,18 @@ Responses: `206 Partial Content` with `Content-Range` and `Content-Length`. Inva
 
 ---
 
-## Docker
+## Docker (build from source)
 
-The image is multi-platform (linux/amd64, linux/arm64). Default build matches your host; use `--platform` or buildx for other arches.
+Use this when developing or when you need to build the image yourself (e.g. custom tag or private registry). For production, use the [published image](#production-setup) `akave/go-akavelink:v1.0.0`.
 
-### Build
+**Clone the repo** (if you haven’t):
+
+```bash
+git clone https://github.com/akave-ai/go-akavelink
+cd go-akavelink
+```
+
+**Build** (multi-platform: linux/amd64, linux/arm64):
 
 ```bash
 # Build for current platform
@@ -137,7 +195,7 @@ docker build -t go-akavelink:latest .
 docker build --platform linux/arm64 -t go-akavelink:latest .
 ```
 
-### Run
+**Run** (foreground, for local testing):
 
 ```bash
 docker run --rm -p 8080:8080 \
@@ -146,17 +204,15 @@ docker run --rm -p 8080:8080 \
   go-akavelink:latest
 ```
 
-Optional env vars: `PORT`, `LOG_LEVEL`, `LOG_FORMAT`, `CORS_ORIGINS`, `AKAVE_MAX_CONCURRENCY`, `AKAVE_BLOCK_PART_SIZE`.
-
-The image includes a **HEALTHCHECK** that hits `GET /health` every 30s (start period 5s, 3 retries).
-
-### Push to Docker Hub
+**Push to Docker Hub** (for maintainers):
 
 ```bash
 docker login
-docker build -t YOUR_DOCKERHUB_USER/go-akavelink:latest .
-docker push YOUR_DOCKERHUB_USER/go-akavelink:latest
+docker build -t akave/go-akavelink:v1.0.0 .
+docker push akave/go-akavelink:v1.0.0
 ```
+
+The image includes a **HEALTHCHECK** that hits `GET /health` every 30s (start period 5s, 3 retries).
 
 ---
 
