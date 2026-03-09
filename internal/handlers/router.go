@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/akave-ai/go-akavelink/internal/logger"
 	"github.com/gorilla/mux"
 
 	sdksym "github.com/akave-ai/akavesdk/sdk"
@@ -37,7 +38,9 @@ type Server struct {
 }
 
 // NewRouter wires all routes and returns a http.Handler you can mount in main.
-func NewRouter(client ClientAPI) http.Handler {
+// corsOrigins: use DefaultCORSOrigins ("*") or a comma-separated list; empty means "*".
+// Request logging and CORS middleware are applied.
+func NewRouter(client ClientAPI, corsOrigins string) http.Handler {
 	r := mux.NewRouter().StrictSlash(true)
 	s := &Server{client: client}
 
@@ -45,9 +48,7 @@ func NewRouter(client ClientAPI) http.Handler {
 	// Buckets
 	r.HandleFunc("/buckets/{bucketName}", s.createBucketHandler).Methods("POST")
 	r.HandleFunc("/buckets/{bucketName}", s.deleteBucketHandler).Methods("DELETE")
-	// Normalized route without trailing slash; keep both for compatibility
 	r.HandleFunc("/buckets", s.viewBucketHandler).Methods("GET")
-	// r.HandleFunc("/buckets/", viewBucketHandler).Methods("GET")
 	// Files
 	r.HandleFunc("/buckets/{bucketName}/files", s.listFilesHandler).Methods("GET")
 	r.HandleFunc("/buckets/{bucketName}/files", s.uploadHandler).Methods("POST")
@@ -55,5 +56,9 @@ func NewRouter(client ClientAPI) http.Handler {
 	r.HandleFunc("/buckets/{bucketName}/files/{fileName}/download", s.downloadHandler).Methods("GET")
 	r.HandleFunc("/buckets/{bucketName}/files/{fileName}", s.fileDeleteHandler).Methods("DELETE")
 
-	return r
+	h := logger.Middleware(r)
+	if corsOrigins == "" {
+		corsOrigins = DefaultCORSOrigins
+	}
+	return CORSMiddleware(corsOrigins, h)
 }

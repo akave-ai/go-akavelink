@@ -2,9 +2,9 @@
 package handlers
 
 import (
-	"log"
 	"net/http"
 
+	"github.com/akave-ai/go-akavelink/internal/logger"
 	"github.com/gorilla/mux"
 )
 
@@ -24,7 +24,7 @@ func (s *Server) createBucketHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.client.CreateBucket(r.Context(), bucketName); err != nil {
 		s.writeErrorResponse(w, http.StatusInternalServerError, "Failed to create bucket")
-		log.Printf("create bucket error: %v", err)
+		logger.Error("create bucket failed", "bucket", bucketName, "error", err)
 		return
 	}
 
@@ -51,35 +51,35 @@ func (s *Server) deleteBucketHandler(w http.ResponseWriter, r *http.Request) {
 	files, err := s.client.ListFiles(ctx, bucketName)
 	if err != nil {
 		s.writeErrorResponse(w, http.StatusInternalServerError, "Failed to list files for deletion")
-		log.Printf("list files before delete bucket error: %v", err)
+		logger.Error("list files before delete bucket failed", "bucket", bucketName, "error", err)
 		return
 	}
 
-	log.Printf("Found %d files to delete.", len(files))
+	logger.Info("deleting bucket contents", "bucket", bucketName, "file_count", len(files))
 	for _, file := range files {
 		ipc, err := s.client.NewIPC()
 		if err != nil {
 			s.writeErrorResponse(w, http.StatusInternalServerError, "Failed to create IPC client for deletion")
-			log.Printf("new IPC error: %v", err)
+			logger.Error("new IPC failed during bucket delete", "error", err)
 			return
 		}
 
-		log.Printf("Deleting file: %s from bucket: %s", file.Name, bucketName)
+		logger.Debug("deleting file from bucket", "bucket", bucketName, "file", file.Name)
 		if err := ipc.FileDelete(ctx, bucketName, file.Name); err != nil {
 			s.writeErrorResponse(w, http.StatusInternalServerError, "Failed to delete file")
-			log.Printf("file delete error for %s: %v", file.Name, err)
+			logger.Error("file delete failed", "bucket", bucketName, "file", file.Name, "error", err)
 			return
 		}
 	}
 
-	log.Printf("Deleting empty bucket: %s", bucketName)
+	logger.Info("deleting empty bucket", "bucket", bucketName)
 	if err := s.client.DeleteBucket(ctx, bucketName); err != nil {
 		s.writeErrorResponse(w, http.StatusInternalServerError, "Failed to delete empty bucket")
-		log.Printf("delete bucket error: %v", err)
+		logger.Error("delete bucket failed", "bucket", bucketName, "error", err)
 		return
 	}
 
-	log.Printf("Successfully deleted bucket and its contents: %s", bucketName)
+	logger.Info("bucket and contents deleted", "bucket", bucketName)
 	s.writeSuccessResponse(w, http.StatusOK, map[string]string{
 		"message": "Bucket and all its contents deleted successfully",
 	})
@@ -90,7 +90,7 @@ func (s *Server) viewBucketHandler(w http.ResponseWriter, _ *http.Request) {
 	buckets, err := s.client.ListBuckets()
 	if err != nil {
 		s.writeErrorResponse(w, http.StatusInternalServerError, "failed to list buckets")
-		log.Printf("list buckets error: %v", err)
+		logger.Error("list buckets failed", "error", err)
 		return
 	}
 	s.writeSuccessResponse(w, http.StatusOK, buckets)

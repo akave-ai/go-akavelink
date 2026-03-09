@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,12 +11,14 @@ import (
 	"time"
 
 	"github.com/akave-ai/go-akavelink/internal/handlers"
+	"github.com/akave-ai/go-akavelink/internal/logger"
 	akavesdk "github.com/akave-ai/go-akavelink/internal/sdk"
 	"github.com/akave-ai/go-akavelink/internal/utils"
 )
 
 func MainFunc() {
 	utils.LoadEnvConfig()
+	logger.Init(os.Getenv("LOG_LEVEL"), os.Getenv("LOG_FORMAT"))
 
 	key := os.Getenv("AKAVE_PRIVATE_KEY")
 	node := os.Getenv("AKAVE_NODE_ADDRESS")
@@ -29,18 +30,25 @@ func MainFunc() {
 	if blockpartsize == "" {
 		blockpartsize = "1048576" // 1 MiB
 	}
-	// Parse block part size to int64 as required by the SDK config
 	blockPartSize, parseErr := strconv.ParseInt(blockpartsize, 10, 64)
 	if parseErr != nil {
-		log.Fatalf("invalid AKAVE_BLOCK_PART_SIZE %q: %v", blockpartsize, parseErr)
+		logger.Error("invalid AKAVE_BLOCK_PART_SIZE", "value", blockpartsize, "error", parseErr)
+		os.Exit(1)
 	}
-	// Parse max concurrency to int as required by the SDK config
+	// SDK internal rate limiter has burst 131072; larger block parts cause "Wait(n) exceeds limiter's burst"
+	const maxBlockPartSize int64 = 131072
+	if blockPartSize > maxBlockPartSize {
+		logger.Warn("capping AKAVE_BLOCK_PART_SIZE to SDK limiter burst", "requested", blockPartSize, "capped", maxBlockPartSize)
+		blockPartSize = maxBlockPartSize
+	}
 	maxConcurrency, parseErr2 := strconv.Atoi(maxconcurrency)
 	if parseErr2 != nil {
-		log.Fatalf("invalid AKAVE_MAX_CONCURRENCY %q: %v", maxconcurrency, parseErr2)
+		logger.Error("invalid AKAVE_MAX_CONCURRENCY", "value", maxconcurrency, "error", parseErr2)
+		os.Exit(1)
 	}
 	if key == "" || node == "" {
-		log.Fatal("AKAVE_PRIVATE_KEY and AKAVE_NODE_ADDRESS must be set")
+		logger.Error("AKAVE_PRIVATE_KEY and AKAVE_NODE_ADDRESS must be set")
+		os.Exit(1)
 	}
 
 	cfg := akavesdk.Config{
@@ -52,17 +60,20 @@ func MainFunc() {
 	}
 	client, err := akavesdk.NewClient(cfg)
 	if err != nil {
-		log.Fatalf("client init error: %v", err)
+		logger.Error("client init failed", "error", err)
+		os.Exit(1)
 	}
 	defer func() {
 		if err := client.Close(); err != nil {
-			log.Printf("client close error: %v", err)
+			logger.Warn("client close error", "error", err)
 		}
 	}()
 
-	// Set up HTTP server with routes via internal/handlers
-	r := handlers.NewRouter(client)
-	// Resolve PORT from environment with default
+	corsOrigins := os.Getenv("CORS_ORIGINS")
+	if corsOrigins == "" {
+		corsOrigins = handlers.DefaultCORSOrigins
+	}
+	r := handlers.NewRouter(client, corsOrigins)
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -77,28 +88,26 @@ func MainFunc() {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	// Listen for shutdown signals
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Start server
 	go func() {
-		log.Printf("Server listening on :%s", port)
+		logger.Info("server listening", "port", port, "addr", ":"+port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server error: %v", err)
+			logger.Error("server error", "error", err)
+			os.Exit(1)
 		}
 	}()
 
-	// Block until a shutdown signal is received
 	<-ctx.Done()
-	log.Println("Shutdown signal received, shutting down gracefully...")
+	logger.Info("shutdown signal received, shutting down gracefully")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("Server forced to shutdown: %v", err)
+		logger.Warn("server forced to shutdown", "error", err)
 	}
-	log.Println("Server exited cleanly")
+	logger.Info("server exited cleanly")
 }
 
 func main() {

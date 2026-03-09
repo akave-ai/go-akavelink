@@ -5,11 +5,11 @@ package utils
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
 
+	"github.com/akave-ai/go-akavelink/internal/logger"
 	"github.com/joho/godotenv"
 )
 
@@ -48,11 +48,11 @@ func LoadEnvConfig() {
 		// 2. If DOTENV_PATH is not set, try to find the module root and load .env from there
 		moduleRoot, err := FindModuleRoot()
 		if err != nil {
-			log.Printf("Warning: Failed to find Go module root: %v. .env won't be loaded automatically.", err)
+			logger.Warn("failed to find module root, .env not loaded", "error", err)
 		} else if moduleRoot != "" {
 			dotenvPath = filepath.Join(moduleRoot, ".env")
 		} else {
-			log.Printf("Warning: Could not determine Go module root. .env won't be loaded automatically.")
+			logger.Warn("could not determine module root, .env not loaded")
 		}
 	}
 
@@ -60,11 +60,11 @@ func LoadEnvConfig() {
 	if dotenvPath != "" {
 		err := godotenv.Load(dotenvPath)
 		if err != nil {
-			log.Printf("Warning: Could not load .env file from %s: %v. Relying on system environment variables.", dotenvPath, err)
+			logger.Warn("could not load .env, using system env", "path", dotenvPath, "error", err)
 		} else {
-			log.Printf("Successfully loaded .env file from %s.", dotenvPath)
+			logger.Info("loaded .env", "path", dotenvPath)
 		}
 	} else {
-		log.Println("Warning: No .env path determined. Relying solely on system environment variables.")
+		logger.Warn("no .env path determined, using system environment only")
 	}
 }

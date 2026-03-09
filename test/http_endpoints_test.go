@@ -1,19 +1,36 @@
+// Package test contains HTTP handler tests. By default they use a mock client (no network).
+//
+// To run all tests against the real Akave endpoint, set AKAVE_PRIVATE_KEY (and optionally
+// AKAVE_NODE_ADDRESS) then run the integration test:
+//
+//	AKAVE_PRIVATE_KEY=your_hex_key go test -v ./test -run TestHTTP_Integration_RealEndpoints
+//
+// Or load from .env (e.g. in repo root):
+//
+//	go test -v ./test -run TestHTTP_Integration_RealEndpoints
 package test
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	sdksym "github.com/akave-ai/akavesdk/sdk"
 	"github.com/akave-ai/go-akavelink/internal/handlers"
+	akavesdk "github.com/akave-ai/go-akavelink/internal/sdk"
+	"github.com/akave-ai/go-akavelink/internal/utils"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // mockIPC implements handlers.IPCDeleter
@@ -26,16 +43,18 @@ func (m *mockIPC) FileDelete(ctx context.Context, bucket, file string) error { r
 
 // mockClient implements handlers.ClientAPI
 type mockClient struct {
-	Buckets      []string
-	Files        []sdksym.IPCFileListItem
-	CreateErr    error
-	DeleteErr    error
-	ListErr      error
-	ListFilesErr error
-	InfoErr      error
-	UploadErr    error
-	DownloadErr  error
-	NewIPCErr    error
+	Buckets         []string
+	Files           []sdksym.IPCFileListItem
+	CreateErr       error
+	DeleteErr       error
+	ListErr         error
+	ListFilesErr    error
+	InfoErr         error
+	UploadErr       error
+	DownloadErr     error
+	NewIPCErr       error
+	DownloadContent string   // body written by Download(); default "content"
+	FileSize        int64    // ActualSize returned by FileInfo when > 0 (for range tests)
 }
 
 func (m *mockClient) CreateBucket(ctx context.Context, bucket string) error { return m.CreateErr }
@@ -56,11 +75,18 @@ func (m *mockClient) CreateFileDownload(ctx context.Context, bucket, file string
 	return d, nil
 }
 func (m *mockClient) Download(ctx context.Context, download sdksym.IPCFileDownload, w io.Writer) error {
-	_, _ = w.Write([]byte("content"))
+	body := m.DownloadContent
+	if body == "" {
+		body = "content"
+	}
+	_, _ = w.Write([]byte(body))
 	return m.DownloadErr
 }
 func (m *mockClient) FileInfo(ctx context.Context, bucket, file string) (sdksym.IPCFileMeta, error) {
 	var v sdksym.IPCFileMeta
+	if m.FileSize > 0 {
+		v.ActualSize = m.FileSize
+	}
 	return v, m.InfoErr
 }
 func (m *mockClient) FileDelete(ctx context.Context, bucket, file string) error { return nil }
@@ -68,7 +94,7 @@ func (m *mockClient) NewIPC() (*sdksym.IPC, error)                              
 
 func TestHTTP_Health(t *testing.T) {
 	mc := &mockClient{}
-	r := handlers.NewRouter(mc)
+	r := handlers.NewRouter(mc, "")
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	r.ServeHTTP(rec, req)
@@ -88,7 +114,7 @@ func TestHTTP_Health(t *testing.T) {
 
 func TestHTTP_ListBuckets(t *testing.T) {
 	mc := &mockClient{Buckets: []string{"a", "b"}}
-	r := handlers.NewRouter(mc)
+	r := handlers.NewRouter(mc, "")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/buckets", nil))
 	assert.Equal(t, http.StatusOK, rec.Code)
@@ -103,7 +129,7 @@ func TestHTTP_ListBuckets(t *testing.T) {
 
 func TestHTTP_CreateBucket(t *testing.T) {
 	mc := &mockClient{}
-	r := handlers.NewRouter(mc)
+	r := handlers.NewRouter(mc, "")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/buckets/testbucket", nil))
 	assert.Equal(t, http.StatusCreated, rec.Code)
@@ -111,7 +137,7 @@ func TestHTTP_CreateBucket(t *testing.T) {
 
 func TestHTTP_Upload(t *testing.T) {
 	mc := &mockClient{}
-	r := handlers.NewRouter(mc)
+	r := handlers.NewRouter(mc, "")
 
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
@@ -131,16 +157,75 @@ func TestHTTP_Upload(t *testing.T) {
 
 func TestHTTP_Download(t *testing.T) {
 	mc := &mockClient{}
-	r := handlers.NewRouter(mc)
+	r := handlers.NewRouter(mc, "")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/buckets/b1/files/f.txt/download", nil))
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "content", rec.Body.String())
 }
 
+func TestHTTP_Download_ByteRange(t *testing.T) {
+	// Mock returns "content" (7 bytes); FileInfo returns ActualSize 7 for range parsing
+	mc := &mockClient{FileSize: 7, DownloadContent: "content"}
+	r := handlers.NewRouter(mc, "")
+
+	t.Run("first_bytes", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/buckets/b1/files/f.txt/download", nil)
+		req.Header.Set("Range", "bytes=0-2")
+		r.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusPartialContent, rec.Code)
+		assert.Equal(t, "con", rec.Body.String())
+		assert.Equal(t, "bytes 0-2/7", rec.Header().Get("Content-Range"))
+		assert.Equal(t, "3", rec.Header().Get("Content-Length"))
+	})
+
+	t.Run("middle_bytes", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/buckets/b1/files/f.txt/download", nil)
+		req.Header.Set("Range", "bytes=2-5")
+		r.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusPartialContent, rec.Code)
+		assert.Equal(t, "nten", rec.Body.String())
+		assert.Equal(t, "bytes 2-5/7", rec.Header().Get("Content-Range"))
+		assert.Equal(t, "4", rec.Header().Get("Content-Length"))
+	})
+
+	t.Run("open_end", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/buckets/b1/files/f.txt/download", nil)
+		req.Header.Set("Range", "bytes=4-")
+		r.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusPartialContent, rec.Code)
+		assert.Equal(t, "ent", rec.Body.String())
+		assert.Equal(t, "bytes 4-6/7", rec.Header().Get("Content-Range"))
+		assert.Equal(t, "3", rec.Header().Get("Content-Length"))
+	})
+
+	t.Run("suffix_bytes", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/buckets/b1/files/f.txt/download", nil)
+		req.Header.Set("Range", "bytes=-3")
+		r.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusPartialContent, rec.Code)
+		assert.Equal(t, "ent", rec.Body.String())
+		assert.Equal(t, "bytes 4-6/7", rec.Header().Get("Content-Range"))
+		assert.Equal(t, "3", rec.Header().Get("Content-Length"))
+	})
+
+	t.Run("416_unsatisfiable", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/buckets/b1/files/f.txt/download", nil)
+		req.Header.Set("Range", "bytes=10-20")
+		r.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusRequestedRangeNotSatisfiable, rec.Code)
+		assert.Equal(t, "bytes */7", rec.Header().Get("Content-Range"))
+	})
+}
+
 func TestHTTP_DeleteFile(t *testing.T) {
 	mc := &mockClient{}
-	r := handlers.NewRouter(mc)
+	r := handlers.NewRouter(mc, "")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/buckets/b1/files/f.txt", nil))
 	assert.Equal(t, http.StatusOK, rec.Code)
@@ -148,8 +233,144 @@ func TestHTTP_DeleteFile(t *testing.T) {
 
 func TestHTTP_DeleteBucket(t *testing.T) {
 	mc := &mockClient{Files: []sdksym.IPCFileListItem{}}
-	r := handlers.NewRouter(mc)
+	r := handlers.NewRouter(mc, "")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/buckets/b1", nil))
 	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// TestHTTP_Integration_RealEndpoints runs all HTTP endpoint tests against the real Akave API.
+// Skip unless AKAVE_PRIVATE_KEY is set. Uses the same router + httptest; only the backend client is real.
+func TestHTTP_Integration_RealEndpoints(t *testing.T) {
+	utils.LoadEnvConfig()
+	key := os.Getenv("AKAVE_PRIVATE_KEY")
+	if key == "" {
+		t.Skip("AKAVE_PRIVATE_KEY not set; skipping real-endpoint integration test")
+	}
+	node := os.Getenv("AKAVE_NODE_ADDRESS")
+	if node == "" {
+		node = "connect.akave.ai:5500"
+	}
+	maxConc := 10
+	if v := os.Getenv("AKAVE_MAX_CONCURRENCY"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			maxConc = n
+		}
+	}
+	blockPartSize := int64(1048576)
+	if v := os.Getenv("AKAVE_BLOCK_PART_SIZE"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			blockPartSize = n
+		}
+	}
+
+	cfg := akavesdk.Config{
+		NodeAddress:       node,
+		MaxConcurrency:    maxConc,
+		BlockPartSize:     blockPartSize,
+		UseConnectionPool: true,
+		PrivateKeyHex:     key,
+	}
+	client, err := akavesdk.NewClient(cfg)
+	require.NoError(t, err)
+	defer func() { _ = client.Close() }()
+
+	r := handlers.NewRouter(client, "")
+	baseURL := ""
+	unique := time.Now().UnixNano()
+	bucket := fmt.Sprintf("e2e-http-%d", unique)
+	fileName := "hello.txt"
+	fileContent := "hello from integration test"
+
+	// 1) Health
+	t.Run("Health", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, baseURL+"/health", nil)
+		r.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusOK, rec.Code)
+		var resp struct {
+			Success bool   `json:"success"`
+			Data    string `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+		assert.True(t, resp.Success)
+	})
+
+	// 2) Create bucket
+	t.Run("CreateBucket", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, baseURL+"/buckets/"+bucket, nil)
+		r.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusCreated, rec.Code, "body: %s", rec.Body.Bytes())
+	})
+
+	// 3) List buckets (should include our bucket)
+	t.Run("ListBuckets", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, baseURL+"/buckets", nil))
+		assert.Equal(t, http.StatusOK, rec.Code)
+		var resp struct {
+			Success bool     `json:"success"`
+			Data    []string `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+		assert.True(t, resp.Success)
+		assert.Contains(t, resp.Data, bucket)
+	})
+
+	// 4) Upload file
+	t.Run("Upload", func(t *testing.T) {
+		var body bytes.Buffer
+		w := multipart.NewWriter(&body)
+		fw, err := w.CreateFormFile("file", fileName)
+		require.NoError(t, err)
+		_, err = io.Copy(fw, strings.NewReader(fileContent))
+		require.NoError(t, err)
+		require.NoError(t, w.Close())
+
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, baseURL+"/buckets/"+bucket+"/files", &body)
+		req.Header.Set("Content-Type", w.FormDataContentType())
+		r.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusCreated, rec.Code, "body: %s", rec.Body.Bytes())
+		var resp map[string]interface{}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+		assert.Equal(t, true, resp["success"])
+	})
+
+	// 5) Download file
+	t.Run("Download", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, baseURL+"/buckets/"+bucket+"/files/"+fileName+"/download", nil)
+		r.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, fileContent, rec.Body.String())
+	})
+
+	// 5b) Download with byte range
+	t.Run("DownloadByteRange", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, baseURL+"/buckets/"+bucket+"/files/"+fileName+"/download", nil)
+		req.Header.Set("Range", "bytes=0-5")
+		r.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusPartialContent, rec.Code)
+		assert.Equal(t, fileContent[:6], rec.Body.String(), "first 6 bytes")
+		assert.Equal(t, "bytes 0-5/"+strconv.Itoa(len(fileContent)), rec.Header().Get("Content-Range"))
+	})
+
+	// 6) Delete file
+	t.Run("DeleteFile", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodDelete, baseURL+"/buckets/"+bucket+"/files/"+fileName, nil)
+		r.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusOK, rec.Code)
+	})
+
+	// 7) Delete bucket
+	t.Run("DeleteBucket", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodDelete, baseURL+"/buckets/"+bucket, nil)
+		r.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusOK, rec.Code)
+	})
 }

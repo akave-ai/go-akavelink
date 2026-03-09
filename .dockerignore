@@ -1,0 +1,9 @@
+.git
+.env
+*.md
+.DS_Store
+*.test
+coverage.out
+.idea
+.vscode
+*.log
