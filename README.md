@@ -64,6 +64,8 @@ WRITE_TIMEOUT=0
 
 Run the published image **detached** (no need to clone the repo). Requires Docker and your Akave credentials.
 
+> **Note:** Replace `v1.0.0` below with the latest release tag from the [GitHub releases page](https://github.com/akave-ai/go-akavelink/releases).
+
 **Pull and run (detached):**
 
 ```bash
