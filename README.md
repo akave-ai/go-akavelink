@@ -39,6 +39,8 @@ Configuration is read from environment variables. You can use a `.env` file at t
 | `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error`. |
 | `LOG_FORMAT` | `json` | Log format: `json` (for production) or `text`. |
 | `CORS_ORIGINS` | `*` | Allowed CORS origins. Use `*` for all, or a comma-separated list (e.g. `https://app.example.com,https://admin.example.com`). |
+| `READ_TIMEOUT` | `0` (none) | HTTP server read timeout as a Go duration (e.g. `5m`, `30s`). `0` means no timeout, which is recommended for large file uploads. |
+| `WRITE_TIMEOUT` | `0` (none) | HTTP server write timeout as a Go duration (e.g. `10m`, `60s`). `0` means no timeout, which is recommended for large file downloads. |
 | `DOTENV_PATH` | (auto) | Absolute path to `.env` file. If unset, the server looks for `.env` at the Go module root. |
 
 ### Example `.env`
@@ -52,6 +54,8 @@ AKAVE_BLOCK_PART_SIZE=131072
 LOG_LEVEL=info
 LOG_FORMAT=json
 CORS_ORIGINS=*
+READ_TIMEOUT=0
+WRITE_TIMEOUT=0
 ```
 
 ---
@@ -242,6 +246,20 @@ AKAVE_PRIVATE_KEY=your_hex_key go test ./test -v -run TestHTTP_Integration_RealE
 
 ```bash
 go test ./test -v -run 'TestHTTP_'
+```
+
+### Large file upload tests
+
+Mock-based (no credentials, tests 50/100/500 MB through the HTTP layer):
+
+```bash
+go test ./test -v -run TestHTTP_Upload_LargeFile
+```
+
+Integration (real Akave API, default 100 MB — override with `LARGE_FILE_SIZE_MB`):
+
+```bash
+AKAVE_PRIVATE_KEY=your_hex_key LARGE_FILE_SIZE_MB=500 go test ./test -v -timeout 30m -run TestHTTP_Integration_LargeFileUpload
 ```
 
 ### Byte-range download tests

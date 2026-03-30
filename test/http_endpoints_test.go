@@ -155,6 +155,64 @@ func TestHTTP_Upload(t *testing.T) {
 	assert.Equal(t, true, resp["success"])
 }
 
+// TestHTTP_Upload_LargeFile verifies that uploads larger than the 32 MiB multipart
+// memory threshold work correctly (the rest spills to disk via Go's multipart handling).
+func TestHTTP_Upload_LargeFile(t *testing.T) {
+	sizes := []struct {
+		name string
+		size int64
+	}{
+		{"50MB", 50 << 20},
+		{"100MB", 100 << 20},
+		{"500MB", 500 << 20},
+	}
+
+	for _, tc := range sizes {
+		t.Run(tc.name, func(t *testing.T) {
+			mc := &mockClient{}
+			r := handlers.NewRouter(mc, "")
+
+			// Use a pipe to avoid buffering the entire body in memory.
+			pr, pw := io.Pipe()
+			w := multipart.NewWriter(pw)
+
+			go func() {
+				fw, err := w.CreateFormFile("file", "largefile.bin")
+				if err != nil {
+					pw.CloseWithError(err)
+					return
+				}
+				// Write tc.size zero-bytes without allocating a big buffer.
+				_, err = io.CopyN(fw, zeroReader{}, tc.size)
+				if err != nil {
+					pw.CloseWithError(err)
+					return
+				}
+				w.Close()
+				pw.Close()
+			}()
+
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/buckets/b1/files", pr)
+			req.Header.Set("Content-Type", w.FormDataContentType())
+			r.ServeHTTP(rec, req)
+
+			assert.Equal(t, http.StatusCreated, rec.Code, "body: %s", rec.Body.String())
+			var resp map[string]interface{}
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+			assert.Equal(t, true, resp["success"])
+		})
+	}
+}
+
+// zeroReader is an io.Reader that produces an infinite stream of zero bytes.
+type zeroReader struct{}
+
+func (zeroReader) Read(p []byte) (int, error) {
+	clear(p)
+	return len(p), nil
+}
+
 func TestHTTP_Download(t *testing.T) {
 	mc := &mockClient{}
 	r := handlers.NewRouter(mc, "")
@@ -372,5 +430,111 @@ func TestHTTP_Integration_RealEndpoints(t *testing.T) {
 		req := httptest.NewRequest(http.MethodDelete, baseURL+"/buckets/"+bucket, nil)
 		r.ServeHTTP(rec, req)
 		assert.Equal(t, http.StatusOK, rec.Code)
+	})
+}
+
+// TestHTTP_Integration_LargeFileUpload tests uploading large files (100MB+) against the real
+// Akave endpoint. Requires AKAVE_PRIVATE_KEY. Set LARGE_FILE_SIZE_MB to control file size
+// (default 100). Uploads zero-filled data and verifies the upload succeeds end-to-end.
+func TestHTTP_Integration_LargeFileUpload(t *testing.T) {
+	utils.LoadEnvConfig()
+	key := os.Getenv("AKAVE_PRIVATE_KEY")
+	if key == "" {
+		t.Skip("AKAVE_PRIVATE_KEY not set; skipping large file integration test")
+	}
+	node := os.Getenv("AKAVE_NODE_ADDRESS")
+	if node == "" {
+		node = "connect.akave.ai:5500"
+	}
+	maxConc := 10
+	if v := os.Getenv("AKAVE_MAX_CONCURRENCY"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			maxConc = n
+		}
+	}
+	blockPartSize := int64(1048576)
+	if v := os.Getenv("AKAVE_BLOCK_PART_SIZE"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			blockPartSize = n
+		}
+	}
+
+	sizeMB := int64(100)
+	if v := os.Getenv("LARGE_FILE_SIZE_MB"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			sizeMB = n
+		}
+	}
+	fileSize := sizeMB << 20
+
+	cfg := akavesdk.Config{
+		NodeAddress:       node,
+		MaxConcurrency:    maxConc,
+		BlockPartSize:     blockPartSize,
+		UseConnectionPool: true,
+		PrivateKeyHex:     key,
+	}
+	client, err := akavesdk.NewClient(cfg)
+	require.NoError(t, err)
+	defer func() { _ = client.Close() }()
+
+	r := handlers.NewRouter(client, "")
+	unique := time.Now().UnixNano()
+	bucket := fmt.Sprintf("e2e-large-%d", unique)
+	fileName := fmt.Sprintf("large-%dmb.bin", sizeMB)
+
+	// Create bucket
+	t.Run("CreateBucket", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/buckets/"+bucket, nil)
+		r.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusCreated, rec.Code, "body: %s", rec.Body.Bytes())
+	})
+
+	// Upload large file using pipe (no memory buffering)
+	t.Run("UploadLargeFile", func(t *testing.T) {
+		pr, pw := io.Pipe()
+		w := multipart.NewWriter(pw)
+
+		go func() {
+			fw, err := w.CreateFormFile("file", fileName)
+			if err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+			_, err = io.CopyN(fw, zeroReader{}, fileSize)
+			if err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+			w.Close()
+			pw.Close()
+		}()
+
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/buckets/"+bucket+"/files", pr)
+		req.Header.Set("Content-Type", w.FormDataContentType())
+
+		t.Logf("uploading %d MB file...", sizeMB)
+		start := time.Now()
+		r.ServeHTTP(rec, req)
+		elapsed := time.Since(start)
+		t.Logf("upload completed in %s", elapsed)
+
+		assert.Equal(t, http.StatusCreated, rec.Code, "body: %s", rec.Body.String())
+		var resp map[string]interface{}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+		assert.Equal(t, true, resp["success"])
+	})
+
+	// Cleanup: delete file and bucket
+	t.Run("Cleanup", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodDelete, "/buckets/"+bucket+"/files/"+fileName, nil)
+		r.ServeHTTP(rec, req)
+
+		rec = httptest.NewRecorder()
+		req = httptest.NewRequest(http.MethodDelete, "/buckets/"+bucket, nil)
+		r.ServeHTTP(rec, req)
 	})
 }

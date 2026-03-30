@@ -79,12 +79,21 @@ func MainFunc() {
 		port = "8080"
 	}
 
+	readTimeout := parseDurationEnv("READ_TIMEOUT", 0)
+	writeTimeout := parseDurationEnv("WRITE_TIMEOUT", 0)
+	if readTimeout > 0 {
+		logger.Info("server read timeout configured", "timeout", readTimeout)
+	}
+	if writeTimeout > 0 {
+		logger.Info("server write timeout configured", "timeout", writeTimeout)
+	}
+
 	srv := &http.Server{
 		Addr:              ":" + port,
 		Handler:           r,
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      15 * time.Second,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
 		IdleTimeout:       60 * time.Second,
 	}
 
@@ -108,6 +117,21 @@ func MainFunc() {
 		logger.Warn("server forced to shutdown", "error", err)
 	}
 	logger.Info("server exited cleanly")
+}
+
+// parseDurationEnv reads a duration from an env var (e.g. "30s", "5m").
+// Returns fallback when the variable is unset or empty.
+func parseDurationEnv(key string, fallback time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		logger.Error("invalid duration for env var", "key", key, "value", v, "error", err)
+		os.Exit(1)
+	}
+	return d
 }
 
 func main() {
